@@ -21,8 +21,8 @@ suppressMessages(library(forecast))
 suppressMessages(library(dplyr))
 suppressMessages(library(lubridate))
 
-setwd("D:/GitRepository/coursera/practicalmachinelearning/PracticalMachineLearning")
-
+#setwd("D:/GitRepository/coursera/practicalmachinelearning/PracticalMachineLearning")
+setwd("C:/Repository/MachineLearning/PracticalMachineLearning")
 # Downloading data into a created directory if the directory does not exist.
 if (!dir.exists("./data/")){
   dir.create("./data/")
@@ -52,10 +52,6 @@ training[, date_cols] <- dmy_hm(training[, date_cols])
 num_cols <- which(!names(training) %in% c(factor_cols,date_cols,"classe"))
 training[, num_cols] <- lapply(training[, num_cols], as.numeric)
 
-#for(i in names(testing)){
-#  testing[which(testing[,i] == "" | testing[,i] == "#DIV/0!"), i] <- NA
-#}
-#testing <- testing[, !apply(is.na(testing), 2, all)]
 testing[, factor_cols] <- lapply(testing[, factor_cols], factor)
 testing[, date_cols] <- dmy_hm(testing[, date_cols])
 testing[, num_cols] <- lapply(testing[, num_cols], as.numeric)
@@ -64,6 +60,11 @@ testing[, num_cols] <- lapply(testing[, num_cols], as.numeric)
 
 ## Data Exploration
 ```{r echo=TRUE}
-training_agg <- trai
+training_sub <- subset(training, select = -c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,classe))
+training_agg <- training_sub %>% group_by(num_window) %>% summarise_each(funs(mean(., na.rm = TRUE)))
+
+#train <- right_join(training_agg, training, by = "num_window")
+#train <- merge(training_agg, training, by = "num_window", all.x = TRUE)
+train
 
 ```
