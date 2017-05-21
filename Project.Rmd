@@ -19,8 +19,9 @@ suppressMessages(library(Hmisc))
 suppressMessages(library(pgmm))
 suppressMessages(library(forecast))
 suppressMessages(library(dplyr))
+suppressMessages(library(lubridate))
 
-setwd("C:/Repository/MachineLearning/PracticalMachineLearning")
+setwd("D:/GitRepository/coursera/practicalmachinelearning/PracticalMachineLearning")
 
 # Downloading data into a created directory if the directory does not exist.
 if (!dir.exists("./data/")){
@@ -37,13 +38,32 @@ training <- read.csv("./data/training.csv")
 
 ```{r echo=TRUE}
 for(i in names(training)){
-  training[which(training[,i] == "" | training[,i] == "#DIV/0!"), i] <- NA
+  training[which(training[,i] == "" | training[,i] == "#DIV/0!" | training[,i] == "NA"), i] <- NA
 }
+na_cols <- names(training[, apply(is.na(training), 2, all)])
 training <- training[, !apply(is.na(training), 2, all)]
 
-for(i in names(testing)){
-  testing[which(testing[,i] == "" | testing[,i] == "#DIV/0!"), i] <- NA
-}
-testing <- testing[, !apply(is.na(testing), 2, all)]
+factor_cols <- c("user_name","new_window")
+date_cols <- c("cvtd_timestamp")
+
+training[, c(factor_cols,"classe")] <- lapply(training[, c(factor_cols,"classe")], factor)
+training[, date_cols] <- dmy_hm(training[, date_cols])
+
+num_cols <- which(!names(training) %in% c(factor_cols,date_cols,"classe"))
+training[, num_cols] <- lapply(training[, num_cols], as.numeric)
+
+#for(i in names(testing)){
+#  testing[which(testing[,i] == "" | testing[,i] == "#DIV/0!"), i] <- NA
+#}
+#testing <- testing[, !apply(is.na(testing), 2, all)]
+testing[, factor_cols] <- lapply(testing[, factor_cols], factor)
+testing[, date_cols] <- dmy_hm(testing[, date_cols])
+testing[, num_cols] <- lapply(testing[, num_cols], as.numeric)
+
+```
+
+## Data Exploration
+```{r echo=TRUE}
+training_agg <- trai
 
 ```
