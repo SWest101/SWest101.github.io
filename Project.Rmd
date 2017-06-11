@@ -1,28 +1,32 @@
 ---
 title: "Practical Machine Learning - Project"
 author: "Shaun"
-date: "May 20, 2017"
+date: "June 11, 2017"
 output: html_document
 ---
+## Introduction
+
+> Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it.
+  
+For the purpose of this project, data collected from accelorometers placed on the forearm, arm and dumbles of 6 participants will be analysed and a classified into different groups. Further information can be obtained from http://groupware.les.inf.puc-rio.br/har.
 
 ## Download Data
-
 ```{r echo=TRUE}
 suppressMessages(library(caret))
+suppressMessages(library(doParallel))
 suppressMessages(library(randomForest))
 suppressMessages(library(ggplot2))
 suppressMessages(library(rattle))
-suppressMessages(library(ModelMetrics))
-suppressMessages(library(gbm))
-suppressMessages(library(glmnet))
-suppressMessages(library(Hmisc))
-suppressMessages(library(pgmm))
-suppressMessages(library(forecast))
+suppressMessages(library(plyr))
 suppressMessages(library(dplyr))
-suppressMessages(library(lubridate))
+suppressMessages(library(rpart))
+suppressMessages(library(rpart.plot))
+suppressMessages(library(xgboost))
+suppressMessages(library(LiblineaR))
 
-#setwd("D:/GitRepository/coursera/practicalmachinelearning/PracticalMachineLearning")
+# Set working directory. This will need to be changed to the Git location
 setwd("C:/Repository/MachineLearning/PracticalMachineLearning")
+
 # Downloading data into a created directory if the directory does not exist.
 if (!dir.exists("./data/")){
   dir.create("./data/")
@@ -30,41 +34,142 @@ if (!dir.exists("./data/")){
   download.file("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "./data/testing.csv")
 }
 # Reading in the downloaded data
-testing <- read.csv("./data/testing.csv")
-training <- read.csv("./data/training.csv")
+testing <- read.csv("./data/testing.csv", na.strings = c("NA","#DIV/0!",""))
+training <- read.csv("./data/training.csv", na.strings = c("NA","#DIV/0!",""))
 ```
 
-## Data Cleaning
+## Data Cleaning and Preprocessing
 
+In order to use the data, it needs to be formatted in a manner that the models are able to use.  
+We use native R functionality to first remove any columns that contain missing values and then use the Caret library to preprocess the information by normalizing the data set and removing and near-zero variance predictors.
 ```{r echo=TRUE}
-for(i in names(training)){
-  training[which(training[,i] == "" | training[,i] == "#DIV/0!" | training[,i] == "NA"), i] <- NA
-}
-na_cols <- names(training[, apply(is.na(training), 2, all)])
-training <- training[, !apply(is.na(training), 2, all)]
+# Removing the first 7 columns from the datasets
+training <- training[ ,8:dim(training)[2]]
+testing <- testing[ ,8:dim(testing)[2]]
 
-factor_cols <- c("user_name","new_window")
-date_cols <- c("cvtd_timestamp")
+# Removing any columns that contain missing values
+training <- training[, colSums(is.na(training)) == 0]
+testing <- testing[, colSums(is.na(testing)) == 0]
 
-training[, c(factor_cols,"classe")] <- lapply(training[, c(factor_cols,"classe")], factor)
-training[, date_cols] <- dmy_hm(training[, date_cols])
+# Set the dependent variable as a factor
+training$classe <- as.factor(training$classe)
 
-num_cols <- which(!names(training) %in% c(factor_cols,date_cols,"classe"))
+# Set all columns other than the dependent variable as numeric
+num_cols <- which(!names(training) %in% c("classe"))
 training[, num_cols] <- lapply(training[, num_cols], as.numeric)
-
-testing[, factor_cols] <- lapply(testing[, factor_cols], factor)
-testing[, date_cols] <- dmy_hm(testing[, date_cols])
 testing[, num_cols] <- lapply(testing[, num_cols], as.numeric)
 
+# Preprocess the datasets to normalize to mitigate predictor range magnitude in influencing prediction
+preproc <- preProcess(training, method = c("scale","center","zv","nzv"), na.remove = TRUE)
+train_preproc <- predict(preproc, training)
+test_preproc <- predict(preproc, testing)
+
+# Set seed to ensure reproducibility
+set.seed(42)
+
+# Partition training dataset into a training set and validation set to observe out of bag performance
+split <- createDataPartition(train_preproc$classe, p = 0.7, list = FALSE)
+train <- train_preproc[split, ]
+valid <- train_preproc[-split, ]
 ```
 
-## Data Exploration
+## Model Development
+For the model development, we will assess the performance of 4 models in the classification of the 5 different groups.
+Each model will be applied using th train method of the caret library and bagged using 10-fold cross validation.
+The models that will be assessed are:  
+* Recursive partitioning (rpart),  
+* Random forest (rf),  
+* Extreme Gradient Boosting Trees (xgbTree) and  
+* Support Vector Machines with L2 Regularization (svmLinear3)
+
+The above models were chosen during this evaluation to account for non-linear interactions.
+
+Out of bag error will be tested using the validation set as this provides a fair estimate on the expected error rate for out of sample predictions.
+
 ```{r echo=TRUE}
-training_sub <- subset(training, select = -c(X,user_name,raw_timestamp_part_1,raw_timestamp_part_2,cvtd_timestamp,new_window,classe))
-training_agg <- training_sub %>% group_by(num_window) %>% summarise_each(funs(mean(., na.rm = TRUE)))
+# Setup multicore cluster to increase computation if available.
+cl <- makeCluster(detectCores())
+registerDoParallel(cl)
 
-#train <- right_join(training_agg, training, by = "num_window")
-#train <- merge(training_agg, training, by = "num_window", all.x = TRUE)
-train
+# Create an rpart model using 10-fold cross validation on the preprocessed training set if the model files does not exists.
+# If the model RDS files exists then load it. This saves long computation times as a result of cross validation
+if (!file.exists("rpart_model.RDS")){
+  control <- trainControl(method = "cv", number = 10)
+  model_rpart <- train(classe ~ ., data = train, method = "rpart", trControl = control, na.action = na.omit)
+  saveRDS(model_rpart, "rpart_model.RDS")
+}else{
+  model_rpart <- readRDS("rpart_model.RDS")
+}
 
+# Create an rf model using 10-fold cross validation on the preprocessed training set.
+# If the model RDS files exists then load it. This saves long computation times as a result of cross validation
+if (!file.exists("rf_model.RDS")){
+  control <- trainControl(method = "cv", number = 10)
+  model_rf <- train(classe ~ ., data = train, method = "rf", trControl = control, na.action = na.omit)
+  saveRDS(model_rf, "rf_model.RDS")
+}else{
+  model_rf <- readRDS("rf_model.RDS")
+}
+
+# Create an xgbTree model using 10-fold cross validation on the preprocessed training set.
+# If the model RDS files exists then load it. This saves long computation times as a result of cross validation
+if (!file.exists("xgb_model.RDS")){
+  control <- trainControl(method = "cv", number = 10)
+  model_xgb <- train(classe ~ ., data = train, method = "xgbTree", trControl = control, na.action = na.omit)
+  saveRDS(model_xgb, "xgb_model.RDS")
+}else{
+  model_xgb <- readRDS("xgb_model.RDS")
+}
+
+# Create an svmLinear3 model using 10-fold cross validation on the preprocessed training set.
+# If the model RDS files exists then load it. This saves long computation times as a result of cross validation
+if (!file.exists("svm_model.RDS")){
+  control <- trainControl(method = "cv", number = 10)
+  model_svm <- train(classe ~ ., data = train, method = "svmLinear3", trControl = control, na.action = na.omit)
+  saveRDS(model_svm, "svm_model.RDS")
+}else{
+  model_svm <- readRDS("svm_model.RDS")
+}
+
+# Stop clusters
+stopCluster(cl)
+
+# Predict outcomes using validation set
+valid_rf <- predict(model_rf, valid)
+valid_rpart <- predict(model_rpart, valid)
+valid_xgbT <- predict(model_xgb, valid)
+valid_svm <- predict(model_svm, valid)
+
+# Confusion matrix on validation set
+conf_rf <- confusionMatrix(valid$classe, valid_rf)
+conf_rpart <- confusionMatrix(valid$classe, valid_rpart)
+conf_xgbT <- confusionMatrix(valid$classe, valid_xgbT)
+conf_svm <- confusionMatrix(valid$classe, valid_svm)
+```
+
+The column plot below indicates the performance of each model.  
+The Extreme Gradient Boosted Tree method provides the highest accuracy in terms of classifications at 99.61%.
+This is only marginally better than using Random Forests at 99.3% classification accuracy.
+
+```{r echo=TRUE}
+# Create a data frame for each model accuracy to plot
+result_summary <- data.frame(model = c("xgbTree", "rf", "svm", "rpart"), accuracy = c(conf_xgbT$overall[1], conf_rf$overall[1], conf_svm$overall[1], conf_rpart$overall[1]))
+
+ggplot(result_summary, aes(x=model, y = accuracy, fill = model))+
+  geom_col()+
+  geom_text(aes(label = round(accuracy, digits=4)), position = position_stack(vjust = 0.5))
+```
+
+According to the Random Forest algorithm, the following variables have been ranked in importance to the model. 
+It is important to remember that this is only an indication of variable importance and further work should be done to investigate it.
+```{r echo=TRUE}
+ plot(varImp(model_rf))
+```
+
+## Final Prediction
+
+Using the Extreme Gradient Boosted Tree method, we obtain the following results on the 20 observations in the testing set.
+```{r echo=TRUE}
+test_pred <- predict(model_xgb, test_preproc)
+print(test_pred)
 ```
