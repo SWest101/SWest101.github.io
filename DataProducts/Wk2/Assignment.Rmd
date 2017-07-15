@@ -1,0 +1,85 @@
+---
+title: "WK 2 Assignment - Australian Town Populations"
+author: "Shaun"
+date: "July 14, 2017"
+output: html_document
+---
+
+```{r, echo=FALSE}
+suppressMessages(library(xlsx))
+suppressMessages(library(leaflet))
+suppressMessages(library(RJSONIO))
+suppressMessages(library(magrittr))
+
+setwd("D:/GitRepository/coursera/gitpages/SWest101.github.io/DataProducts/Wk2")
+
+# Downloading data into a created directory if the directory does not exist.
+if (!dir.exists("./data/")){
+    dir.create("./data/")
+    download.file("http://www.abs.gov.au/AUSSTATS/subscriber.nsf/log?openagent&Population%20growth%20and%20turnover%20in%20Local%20Government%20Areas%202006%20to%202011.xls&1380.0.55.007&Data%20Cubes&027E069DBA81A5E2CA257AF7000D10C4&0&2006-2011&21.01.2013&Latest", destfile = "./data/ausstats.xls", mode="wb")
+    # Reading in the downloaded data
+    
+    rawdata <- read.xlsx("./data/ausstats.xls", sheetName="Population growth and turnover ", rowIndex = c(7:567), keepFormulas = FALSE)
+    
+    #Rename columns and omit the first row
+    rawdata[1,] <- NA
+    colnames(rawdata) <- c("Town","PopulationCount2006","PopulationCount2011","PopulationGrowthRate","ModCensusCount","Arrivals","Departures","PopulationFlow","PopulationTurnoverRate")
+    rawdata <- na.omit(rawdata)
+    
+    # Concert all columns other than Town names to numeric format
+    rawdata[, which(colnames(rawdata) != "Town")] <- lapply(rawdata[, which(colnames(rawdata) != "Town")], function(x) {
+      x<-as.numeric(as.character(x))
+    })
+
+    #This function was obtained from stackoverflow: https://stackoverflow.com/a/32505896
+    geocodeAdddress <- function(address) {
+          url <- "http://maps.google.com/maps/api/geocode/json?address="
+          url <- URLencode(paste(url, address, "&sensor=false", sep = ""))
+          x <- fromJSON(url, simplify = FALSE)
+          if (x$status == "OK") {
+            out <- c(x$results[[1]]$geometry$location$lng,
+                     x$results[[1]]$geometry$location$lat)
+          } else {
+            out <- NA
+          }
+          Sys.sleep(0.2)  # API only allows 5 requests per second
+          out
+    }
+
+    #Obtain the Geolocations of each town  
+    count <- 1
+    for (i in rawdata$Town) {
+        latlong <- geocodeAdddress(paste0("Australia, ", substr(i, 9, nchar(i)-4)))
+        rawdata[count, "longitute"] <- latlong[1]
+        rawdata[count, "latitude"] <- latlong[2]
+        count <- count + 1
+    }
+    #Save data into an RDS to speed up load times in future
+    combineddata <- na.omit(rawdata)
+    saveRDS(combineddata, "./data/combineddata.RDS")
+} else {
+    #If the /data/ folder exists then load the data from the RDS file to save time.
+    combineddata <- readRDS("./data/combineddata.RDS")
+}
+```
+
+## Australian Town Populations
+
+```{r, echo=FALSE}
+ leaflet(combineddata) %>% 
+  addTiles() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addMarkers(lng = ~longitute, 
+             lat= ~latitude, 
+             popup = ~paste0(
+                  "Town: ", Town, "</br>",
+                  "Population 2006: ", PopulationCount2006, "</br>",
+                  "Population 2011: ", PopulationCount2011, "</br>",
+                  "Population Growth Rate: ", PopulationGrowthRate, "</br>",
+                  "Arrivals: ", Arrivals, "</br>",
+                  "Departures: ", Departures, "</br>",
+                  "Population Flow: ", PopulationFlow, "</br>"
+             ),
+             label = ~paste0("Town: ", Town)
+  )
+```
