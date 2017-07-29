@@ -1,0 +1,37 @@
+---
+title: "Australian House Price Index"
+author: "Shaun"
+date: "July 29, 2017"
+output: slidy_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+## Introduction
+
+The Australian housing market has become a contentious issue between those who already have a house and those looking to enter the market for the first time.
+
+This application helps to identify australian housing market segments that have performed well and poorly in relation to one another in order to 
+empower the user to make an informed decision.
+
+
+## Slide with Bullets
+
+- Bullet 1
+- Bullet 2
+- Bullet 3
+
+## Slide with R Output
+
+```{r cars, echo = TRUE}
+summary(cars)
+```
+
+## Slide with Plot
+
+```{r pressure}
+plot(pressure)
+```
+
