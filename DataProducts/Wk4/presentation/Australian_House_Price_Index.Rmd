@@ -7,6 +7,11 @@ output: slidy_presentation
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
+suppressMessages(library(plotly))
+suppressMessages(library(xtable))
+suppressMessages(library(leaflet))
+suppressMessages(library(RJSONIO))
+house_price <- readRDS("../shiny/cache/house.RDS")
 ```
 
 ## Introduction
@@ -16,22 +21,74 @@ The Australian housing market has become a contentious issue between those who a
 This application helps to identify australian housing market segments that have performed well and poorly in relation to one another in order to 
 empower the user to make an informed decision.
 
+https://swest.shinyapps.io/australian_house_price_index/
 
-## Slide with Bullets
+## Data Summary
 
-- Bullet 1
-- Bullet 2
-- Bullet 3
+- The data was obtained from <http://www.abs.gov.au/ausstats/abs@.nsf/0/510D8915596EEFE9CA257F1B001B0107?Opendocument>(Australian Bureau of Statistics)
+- The data range is from `r min(house_price$date)` to `r max(house_price$date)`
+- There is a total of `r dim(house_price)[1]` rows of data
 
-## Slide with R Output
+## House Price Index of Residential Properties By Region
 
-```{r cars, echo = TRUE}
-summary(cars)
+The graph below is a subet of data available on the Shiny App.
+```{r echo = T, warning = F}
+plot_ly(house_price[which(house_price$Measure == "Index Number" & house_price$Property.type == "Residential property"), ], x = ~date) %>%
+  group_by(Region) %>%
+  add_lines(y = ~Value, color = ~Region) %>%
+  layout(
+        title = "Australian House Price Index",
+        xaxis = list(
+          rangeslider = list(type = "date")
+         ),
+        yaxis = list(title = "Value")
+    )
 ```
 
-## Slide with Plot
 
-```{r pressure}
-plot(pressure)
+## Closing
+
+Thank you for taking the time to view this presentation!
+
+```{r echo=FALSE}
+geocodeAdddress <- function(address) {
+      url <- "http://maps.google.com/maps/api/geocode/json?address="
+      url <- URLencode(paste(url, address, "&sensor=false", sep = ""))
+      x <- fromJSON(url, simplify = FALSE)
+      if (x$status == "OK") {
+        out <- c(x$results[[1]]$geometry$location$lng,
+                 x$results[[1]]$geometry$location$lat)
+      } else {
+        out <- NA
+      }
+      Sys.sleep(0.2)  # API only allows 5 requests per second
+      out
+}
+
+#Obtain the Geolocations of each town
+if (file.exists("./data/cities.RDS")) {
+    cities <- readRDS("./data/cities.RDS")
+} else {
+    cities <- data.frame(city = c("Perth", "Sydney", "Australian Capital Territory", "Adelaide", "Brisbane", "Darwin","Hobart", "Melbourne"))
+    count <- 1
+    for (i in cities$city) {
+        latlong <- geocodeAdddress(paste0("Australia, ", i))
+        cities[count, "longitute"] <- latlong[1]
+        cities[count, "latitude"] <- latlong[2]
+        count <- count + 1
+    }
+    saveRDS(cities,"./data/cities.RDS")
+}
+
+ leaflet(cities) %>% 
+  addTiles() %>%
+  addProviderTiles(providers$OpenStreetMap) %>%
+  addMarkers(lng = ~longitute, 
+             lat= ~latitude, 
+             popup = ~paste0(
+                  "City: ", city, "</br>"
+             ),
+            label = ~paste0("City: ", city)
+  )
 ```
 

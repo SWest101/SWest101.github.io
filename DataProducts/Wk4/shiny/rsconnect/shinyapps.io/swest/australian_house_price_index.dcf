@@ -1,0 +1,10 @@
+name: australian_house_price_index
+title: Australian House Price Index
+account: swest
+server: shinyapps.io
+appId: 200470
+bundleId: 920161
+url: https://swest.shinyapps.io/australian_house_price_index/
+when: 1501327177.29796
+asMultiple: FALSE
+asStatic: FALSE
